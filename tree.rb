@@ -64,15 +64,11 @@ post "/make/:group" do
 
   token = get_token()
 
+  # Remove current database, if it exists.
+  delete_response = RestClient.delete("http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}", nil, :content_type => :json, :accept => :json)
+
   id_view = JSON.parse(RestClient.post("http://tree:treepassword@tangerine.iriscouch.com/group-#{params[:group]}/_design/ojai/_view/byDKey", {}.to_json, :content_type => :json, :accept => :json))
   id_list = id_view['rows'].map { |row| row['id'] }
-
-  puts "sending this"
-  puts({ :source  => "http://tree:treepassword@tangerine.iriscouch.com/group-#{params[:group]}", 
-    :target  => "copied-group-#{params[:group]}", # "copied-" because debugging on same server 
-    :doc_ids => id_list,
-    :create_target => true
-  }.to_json)
 
   # replicate group to new local here
   replicate_response = RestClient.post("http://tree:treepassword@localhost:5984/_replicate", {
@@ -85,7 +81,6 @@ post "/make/:group" do
   settings = JSON.parse(RestClient.get("http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}/settings"))
   settings['context'] = "mobile"
   mobilfy_response = RestClient.put("http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}/settings", settings.to_json, :content_type => :json, :accept => :json)
-  puts mobilfy_response
 
 
   halt_error 500, "Failed to replicate to tree." if replicate_response.code != 200
@@ -104,6 +99,15 @@ post "/make/:group" do
     copy_rev = ""
   end
 
+  # copy _design/ojai to _design/tangerine
+  copy_request = Net::HTTP::Copy.new("/copied-group-#{params[:group]}/_design/ojai")
+  copy_request["Destination"] = "_design/tangerine" + copy_rev
+  copy_request.basic_auth "tree", "treepassword"
+  copy_response = http.request copy_request
+
+  copy_code = copy_response.code.to_i
+  halt_error 500, "Tree's couch failed to rename design doc." if !(copy_code >= 200 && copy_code < 300)
+
   # @TODO
   # Add admin users from group to APK
   # download _security doc from group
@@ -114,29 +118,14 @@ post "/make/:group" do
   # save all admin users from the group like this:
   #  #{name} = -hashed-#{passwordSHA},#{passwordSalt}
 
-  # copy _design/ojai to _design/tangerine
-  copy_request = Net::HTTP::Copy.new("/copied-group-#{params[:group]}/_design/ojai")
-  copy_request["Destination"] = "_design/tangerine" + copy_rev
-  copy_request.basic_auth "tree", "treepassword"
-  copy_response = http.request copy_request
-
-  copy_code = copy_response.code.to_i
-  halt_error 500, "Tree's couch failed to rename design doc." if !(copy_code >= 200 && copy_code < 300)
 
   begin
-    # clear out temp dir if it's there
-    blank_dir = File.join( Dir.pwd, "tangerine" )
-    `rm -rf #{blank_dir}`
-
-    # make a new temporary dir
-    tangerine_apk = File.join( Dir.pwd, "tangerine.zip" )
-    `unzip #{tangerine_apk}`
 
     # standardize all groups DBs here as tangerine.couch
     db_file     = "copied-group-#{params[:group]}.couch"
     group_db    = File.join( $couch_db_path, db_file )
     target_dir  = File.join( Dir.pwd, "Android-Couchbase-Callback", "assets" )
-    puts "putting into #{target_dir}"
+
     target_path = File.join( target_dir, "tangerine.couch" )
     `cp #{group_db} #{target_path}`
 
@@ -155,7 +144,6 @@ post "/make/:group" do
   begin
 
 
-    puts "starting "
     current_dir = Dir.pwd
     ensure_dir current_dir, "apks", token
 
@@ -164,18 +152,14 @@ post "/make/:group" do
 
     acc_dir = File.join Dir.pwd, "Android-Couchbase-Callback"
     assets_dir = File.join Dir.pwd, "Android-Couchbase-Callback", "assets"
-    puts "\n\n\n #{acc_dir}"
+
     apk_path = File.join( current_dir, "apks", token, "tangerine.apk" )
 
     Dir.chdir(acc_dir) {
-      puts "clean"
-      puts `ant clean`
-      puts "debug"
-      puts `ant debug`
-      puts "moving"
-      puts `mv bin/Tangerine-debug.apk #{apk_path}`
+      `ant clean`
+      `ant debug`
+      `mv bin/Tangerine-debug.apk #{apk_path}`
     }
-    
 
   rescue Exception => e
     $logger.error "Could not copy #{params[:group]}'s database into assets. #{e}"
