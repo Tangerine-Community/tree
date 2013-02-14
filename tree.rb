@@ -65,7 +65,7 @@ post "/make/:group" do
   token = get_token()
 
   # Remove current database, if it exists.
-  delete_response = RestClient.delete("http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}", nil, :content_type => :json, :accept => :json)
+  delete_response = RestClient.delete "http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}"
 
   id_view = JSON.parse(RestClient.post("http://tree:treepassword@tangerine.iriscouch.com/group-#{params[:group]}/_design/ojai/_view/byDKey", {}.to_json, :content_type => :json, :accept => :json))
   id_list = id_view['rows'].map { |row| row['id'] }
