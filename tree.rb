@@ -156,16 +156,16 @@ post "/make/:group" do
 
 
     puts "starting "
-    parent_dir = File.join( Dir.pwd.split("/")[0..-2] )
-    ensure_dir parent_dir, "apks", token
+    current_dir = Dir.pwd
+    ensure_dir current_dir, "apks", token
 
-    groupstamp_location = File.join( parent_dir, "apks", token, params[:group] )
+    groupstamp_location = File.join( current_dir, "apks", token, params[:group] )
     `touch #{groupstamp_location}`
 
     acc_dir = File.join Dir.pwd, "Android-Couchbase-Callback"
     assets_dir = File.join Dir.pwd, "Android-Couchbase-Callback", "assets"
     puts "\n\n\n #{acc_dir}"
-    apk_path = File.join( parent_dir, "apks", token, "tangerine.apk" )
+    apk_path = File.join( current_dir, "apks", token, "tangerine.apk" )
 
     Dir.chdir(acc_dir) {
       puts "clean"
@@ -193,10 +193,10 @@ get "/apk/:token" do
 
   content_type :json
 
-  parent_dir = File.join( Dir.pwd.split("/")[0..-2] )
+  current_dir = Dir.pwd
 
   apk_name = "tangerine.apk"
-  apk_path = File.join( parent_dir, 'apks', params[:token], apk_name)
+  apk_path = File.join( current_dir, 'apks', params[:token], apk_name)
 
   if File.exist? apk_path
     send_file( apk_path ,
