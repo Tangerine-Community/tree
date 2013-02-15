@@ -47,8 +47,6 @@ post "/make/:group" do
 
   #halt 403, { :error => "Please provide #{andify(auth_errors)}."} if auth_errors.length > 0
 
-  puts "sending: #{params[:group]}"
-
   #
   # Authenticate user for the group
   #
@@ -65,10 +63,26 @@ post "/make/:group" do
   token = get_token()
 
   # Remove current database, if it exists.
-  delete_response = RestClient.delete "http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}"
+  begin
+    RestClient.delete("http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}")
+  rescue RestClient::ResourceNotFound
+    # do nothing if it 404s
+  end
 
-  id_view = JSON.parse(RestClient.post("http://tree:treepassword@tangerine.iriscouch.com/group-#{params[:group]}/_design/ojai/_view/byDKey", {}.to_json, :content_type => :json, :accept => :json))
+  # get a list of _ids for the assessments not archived
+  assessments_view = JSON.parse(RestClient.post("http://tree:treepassword@tangerine.iriscouch.com/group-#{params[:group]}/_design/ojai/_view/assessmentsNotArchived", {}.to_json, :content_type => :json, :accept => :json))
+  list_query_data = assessments_view['rows'].map { |row| row['id'][-5..-1] }
+  list_query_data = {"keys" => list_query_data}
+
+  # get a list of files associated with those assessments  
+  id_view = JSON.parse(RestClient.post("http://tree:treepassword@tangerine.iriscouch.com/group-#{params[:group]}/_design/ojai/_view/byDKey",list_query_data.to_json, :content_type => :json,:accept => :json ))
+
   id_list = id_view['rows'].map { |row| row['id'] }
+
+  id_list << "settings"
+  id_list << "templates"
+  id_list << "configuration"
+  id_list << "_design/ojai"
 
   # replicate group to new local here
   replicate_response = RestClient.post("http://tree:treepassword@localhost:5984/_replicate", {
@@ -79,7 +93,12 @@ post "/make/:group" do
   }.to_json, :content_type => :json )
 
   settings = JSON.parse(RestClient.get("http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}/settings"))
+  # the absence of this setting causes tangerine to check
+  settings.delete('ensureAdmin')
   settings['context'] = "mobile"
+  settings['log'] = []
+  
+
   mobilfy_response = RestClient.put("http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}/settings", settings.to_json, :content_type => :json, :accept => :json)
 
 
@@ -119,6 +138,8 @@ post "/make/:group" do
   #  #{name} = -hashed-#{passwordSHA},#{passwordSalt}
 
 
+  RestClient.post("http://tree:treepassword@localhost:5984/tangerine/_compact", "", :content_type => 'application/json')
+
   begin
 
     # standardize all groups DBs here as tangerine.couch
@@ -127,12 +148,15 @@ post "/make/:group" do
     target_dir  = File.join( Dir.pwd, "Android-Couchbase-Callback", "assets" )
 
     target_path = File.join( target_dir, "tangerine.couch" )
+    # bring in the dog
+    `rm #{target_path}`
+    # put out the cat
     `cp #{group_db} #{target_path}`
 
     # rename database (I think this is the only way)
     old_database = File.join target_dir, db_file
     new_database = File.join target_dir, "tangerine.couch"
-    "mv #{old_database} #{new_database}"
+    `mv #{old_database} #{new_database}`
 
   rescue Exception => e
     $logger.error "Could not copy #{params[:group]}'s database into assets. #{e}"
@@ -142,7 +166,6 @@ post "/make/:group" do
   
   # zip APK and place it in token download directory
   begin
-
 
     current_dir = Dir.pwd
     ensure_dir current_dir, "apks", token
