@@ -198,8 +198,6 @@ get "/apk/:token" do
 
   cross_origin
 
-  content_type :json
-
   current_dir = Dir.pwd
 
   apk_name = "tangerine.apk"
