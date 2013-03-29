@@ -228,6 +228,8 @@ get "/apk/:token" do
       :filename    => File.basename(apk_name)
     )
   else
+    content_type :json
+
     halt_error 404, "No APK found, invalid token.", "(404) #{params[:token]}."
   end
 
