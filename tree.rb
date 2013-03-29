@@ -15,6 +15,7 @@ require 'sinatra/cross_origin'
 require 'rest-client'
 require 'json'
 require 'logger'
+require './config.rb'
 
 #
 #
@@ -28,7 +29,16 @@ set :protection, :except => :json_csrf
 
 $character_set = "abcdeghikmnoprstuwxyz".split("") # optimized for mobiles and human error
 $logger = Logger.new "tree.log"
-$couch_db_path = "/home/crazy/build-couchdb/build/var/lib/couchdb" #File.join( `locate tangerine.couch`.split("\n")[0].split("/")[0..-2] )
+
+
+get "/" do
+  "
+  <img src='http://farm1.staticflickr.com/134/352637689_a21b5bb3e1_o.jpg'>
+  <br>
+  <small>Photo by <a href='http://www.flickr.com/photos/mabar/352637689/'>Mabar</a></small>
+  "
+
+end
 
 #
 # handle a request to make an APK
@@ -47,14 +57,19 @@ post "/make/:group" do
 
   #halt 403, { :error => "Please provide #{andify(auth_errors)}."} if auth_errors.length > 0
 
+  copied_group = "#{$servers[:local]}/copied-group-#{params[:group]}"
+  source_group = "#{$servers[:main]}/group-#{params[:group]}"
+
+
   #
   # Authenticate user for the group
   #
-  auth_response = RestClient.post "http://localhost:82", { 
+  auth_response = RestClient.post $servers[:robbert], { 
     :action => "am_admin", 
     :group  => params[:group], 
-    :user   => params[:user] }
-  halt_error(403, "Sorry, you have to be an admin within the group to make an APK.") if JSON.parse(auth_response.body)["message"] == "no"
+    :user   => params[:user]
+  }
+  halt_error(403, "Sorry, you have to be an admin within the group to make an APK.", "Not an admin. #{params.to_json}") if JSON.parse(auth_response.body)["message"] == "no"
 
   #
   # Make APK, place it in token-directory for download
@@ -64,18 +79,18 @@ post "/make/:group" do
 
   # Remove current database, if it exists.
   begin
-    RestClient.delete("http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}")
+    RestClient.delete copied_group
   rescue RestClient::ResourceNotFound
     # do nothing if it 404s
   end
 
   # get a list of _ids for the assessments not archived
-  assessments_view = JSON.parse(RestClient.post("http://tree:treepassword@tangerine.iriscouch.com/group-#{params[:group]}/_design/ojai/_view/assessmentsNotArchived", {}.to_json, :content_type => :json, :accept => :json))
+  assessments_view = JSON.parse(RestClient.post("#{source_group}/_design/ojai/_view/assessmentsNotArchived", {}.to_json, :content_type => :json, :accept => :json))
   list_query_data = assessments_view['rows'].map { |row| row['id'][-5..-1] }
   list_query_data = {"keys" => list_query_data}
 
   # get a list of files associated with those assessments  
-  id_view = JSON.parse(RestClient.post("http://tree:treepassword@tangerine.iriscouch.com/group-#{params[:group]}/_design/ojai/_view/byDKey",list_query_data.to_json, :content_type => :json,:accept => :json ))
+  id_view = JSON.parse(RestClient.post("#{source_group}/_design/ojai/_view/byDKey",list_query_data.to_json, :content_type => :json,:accept => :json ))
 
   id_list = id_view['rows'].map { |row| row['id'] }
 
@@ -85,33 +100,40 @@ post "/make/:group" do
   id_list << "_design/ojai"
 
   # replicate group to new local here
-  replicate_response = RestClient.post("http://tree:treepassword@localhost:5984/_replicate", {
-    :source  => "http://tree:treepassword@tangerine.iriscouch.com/group-#{params[:group]}", 
-    :target  => "copied-group-#{params[:group]}", # "copied-" because debugging on same server 
+  replicate_response = RestClient.post("#{$servers[:main]}/_replicate", {
+    :source  => "#{source_group}", 
+    :target  => "#{copied_group}", # "copied-" because debugging on same server 
     :doc_ids => id_list,
     :create_target => true
   }.to_json, :content_type => :json )
 
-  settings = JSON.parse(RestClient.get("http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}/settings"))
+  halt_error 500, "Failed to replicate temporary database.", "Failed to replicate #{params[:group]}." if replicate_response.code != 200
+
+  # change the settings
+  settings = JSON.parse(RestClient.get("#{copied_group}/settings"))
   # the absence of this setting causes tangerine to check
-  settings.delete('ensureAdmin')
+  settings.delete('adminEnsured')
   settings['context'] = "mobile"
   settings['log'] = []
-  
 
-  mobilfy_response = RestClient.put("http://tree:treepassword@localhost:5984/copied-group-#{params[:group]}/settings", settings.to_json, :content_type => :json, :accept => :json)
+  warn "going to save"
+  warn settings.to_json
 
 
-  halt_error 500, "Failed to replicate to tree." if replicate_response.code != 200
+  mobilfy_response = RestClient.put("#{copied_group}/settings", settings.to_json, :content_type => :json, :accept => :json)
+
+  warn mobilfy_response
+  warn mobilfy_response.code
+  halt_error(500, "Failed to prepare mobile database.", "Could not save settings for #{params[:group]}") if !(mobilfy_response.code >= 200 && mobilfy_response.code < 300)
+
 
   #
   # for the ojai-parallel, replicate into proper design doc
   #
 
   # See if one exists aready
-  http = Net::HTTP.new "localhost", 5984
   get_request = Net::HTTP::Get.new("/copied-group-#{params[:group]}/_design/tangerine")
-  get_response = http.request get_request
+  get_response = $main_http.request get_request
   if get_response.code.to_i == 200
     copy_rev = "?rev=" + JSON.parse(get_response.body).to_hash["_rev"]
   else
@@ -121,11 +143,11 @@ post "/make/:group" do
   # copy _design/ojai to _design/tangerine
   copy_request = Net::HTTP::Copy.new("/copied-group-#{params[:group]}/_design/ojai")
   copy_request["Destination"] = "_design/tangerine" + copy_rev
-  copy_request.basic_auth "tree", "treepassword"
-  copy_response = http.request copy_request
+  copy_request.basic_auth $username, $password
+  copy_response = $main_http.request copy_request
 
   copy_code = copy_response.code.to_i
-  halt_error 500, "Tree's couch failed to rename design doc." if !(copy_code >= 200 && copy_code < 300)
+  halt_error 500, "Tree's couch failed to rename design doc.", "Could not copy for #{params[:group]}." if !(copy_code >= 200 && copy_code < 300)
 
   # @TODO
   # Add admin users from group to APK
@@ -137,8 +159,9 @@ post "/make/:group" do
   # save all admin users from the group like this:
   #  #{name} = -hashed-#{passwordSHA},#{passwordSalt}
 
-
-  RestClient.post("http://tree:treepassword@localhost:5984/tangerine/_ensure_full_commit", "", :content_type => 'application/json')
+  warn "trying to ensure commit with the following"
+  warn File.join(copied_group, "_ensure_full_commit")
+  RestClient.post(File.join(copied_group, "_ensure_full_commit"), "", :content_type => 'application/json')
 
   begin
 
@@ -151,18 +174,10 @@ post "/make/:group" do
     # bring in the dog
     `rm #{target_path}`
     # put out the cat
-    `cp #{group_db} #{target_path}`
-
-    # rename database (I think this is the only way)
-    old_database = File.join target_dir, db_file
-    new_database = File.join target_dir, "tangerine.couch"
-    puts "\n\nmoving into assets folder"
-    puts "from #{old_database} to #{new_database}"
-    `mv #{old_database} #{new_database}`
+    `ln -s #{group_db} #{target_path}`
 
   rescue Exception => e
-    $logger.error "Could not copy #{params[:group]}'s database into assets. #{e}"
-    halt_error 500, "Failed to copy database."
+    halt_error 500, "Failed to copy database.", "Could not copy #{params[:group]}'s database into assets. #{e}"
   end
 
   
@@ -180,16 +195,17 @@ post "/make/:group" do
 
     apk_path = File.join( current_dir, "apks", token, "tangerine.apk" )
 
+    warn "tried to put in"
+    warn apk_path
+
     Dir.chdir(acc_dir) {
       `ant clean`
       `ant debug`
-      puts "moving apk to final destination"
       `mv bin/Tangerine-debug.apk #{apk_path}`
     }
 
   rescue Exception => e
-    $logger.error "Could not copy #{params[:group]}'s database into assets. #{e}"
-    halt_error 500, "Failed to prepare APK."
+    halt_error 500, "Failed to prepare APK.", "Could not copy #{params[:group]}'s database into assets. #{e}"
   end
   
   return { :token => token }.to_json
@@ -212,8 +228,7 @@ get "/apk/:token" do
       :filename    => File.basename(apk_name)
     )
   else
-    $logger.warn "(404) params[:token]."
-    halt_error 404, "No APK found, invalid token."
+    halt_error 404, "No APK found, invalid token.", "(404) #{params[:token]}."
   end
 
 end # of get "/apk/:token" do
@@ -244,7 +259,8 @@ rescue Exception => e
   $logger.error "Couldn't make directory. #{e}"
 end
 
-def halt_error(code, message)
+def halt_error(code, message, log_message)
+  $logger.error log_message
   halt code, { :error => message }.to_json
 end
 
