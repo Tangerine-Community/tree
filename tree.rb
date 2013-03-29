@@ -28,7 +28,7 @@ set :protection, :except => :json_csrf
 
 $character_set = "abcdeghikmnoprstuwxyz".split("") # optimized for mobiles and human error
 $logger = Logger.new "tree.log"
-$couch_db_path = File.join( `locate tangerine.couch`.split("\n")[0].split("/")[0..-2] )
+$couch_db_path = "/home/crazy/build-couchdb/build/var/lib/couchdb" #File.join( `locate tangerine.couch`.split("\n")[0].split("/")[0..-2] )
 
 #
 # handle a request to make an APK
@@ -138,7 +138,7 @@ post "/make/:group" do
   #  #{name} = -hashed-#{passwordSHA},#{passwordSalt}
 
 
-  RestClient.post("http://tree:treepassword@localhost:5984/tangerine/_compact", "", :content_type => 'application/json')
+  RestClient.post("http://tree:treepassword@localhost:5984/tangerine/_ensure_full_commit", "", :content_type => 'application/json')
 
   begin
 
@@ -156,6 +156,8 @@ post "/make/:group" do
     # rename database (I think this is the only way)
     old_database = File.join target_dir, db_file
     new_database = File.join target_dir, "tangerine.couch"
+    puts "\n\nmoving into assets folder"
+    puts "from #{old_database} to #{new_database}"
     `mv #{old_database} #{new_database}`
 
   rescue Exception => e
@@ -181,6 +183,7 @@ post "/make/:group" do
     Dir.chdir(acc_dir) {
       `ant clean`
       `ant debug`
+      puts "moving apk to final destination"
       `mv bin/Tangerine-debug.apk #{apk_path}`
     }
 
