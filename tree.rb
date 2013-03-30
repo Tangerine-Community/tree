@@ -99,15 +99,19 @@ post "/make/:group" do
   id_list << "configuration"
   id_list << "_design/ojai"
 
+
   # replicate group to new local here
-  replicate_response = RestClient.post("#{$servers[:main]}/_replicate", {
+  replicate_request = Net::HTTP::Post.new("/_replicate")
+  replicate_request["content-type"] = "application/json"
+  replicate_request.body = {
     :source  => "#{source_group}", 
     :target  => "#{copied_group}", # "copied-" because debugging on same server 
     :doc_ids => id_list,
     :create_target => true
-  }.to_json, :content_type => :json )
+  }.to_json
+  replicate_response = $main_http.request(replicate_request)
 
-  halt_error 500, "Failed to replicate temporary database.", "Failed to replicate #{params[:group]}." if replicate_response.code != 200
+  #halt_error 500, "Failed to replicate temporary database.", "Failed to replicate #{params[:group]}." if replicate_response.code != 200
 
   # change the settings
   settings = JSON.parse(RestClient.get("#{copied_group}/settings"))
@@ -116,14 +120,8 @@ post "/make/:group" do
   settings['context'] = "mobile"
   settings['log'] = []
 
-  warn "going to save"
-  warn settings.to_json
-
-
   mobilfy_response = RestClient.put("#{copied_group}/settings", settings.to_json, :content_type => :json, :accept => :json)
 
-  warn mobilfy_response
-  warn mobilfy_response.code
   halt_error(500, "Failed to prepare mobile database.", "Could not save settings for #{params[:group]}") if !(mobilfy_response.code >= 200 && mobilfy_response.code < 300)
 
 
@@ -159,8 +157,6 @@ post "/make/:group" do
   # save all admin users from the group like this:
   #  #{name} = -hashed-#{passwordSHA},#{passwordSalt}
 
-  warn "trying to ensure commit with the following"
-  warn File.join(copied_group, "_ensure_full_commit")
   RestClient.post(File.join(copied_group, "_ensure_full_commit"), "", :content_type => 'application/json')
 
   begin
@@ -194,9 +190,6 @@ post "/make/:group" do
     assets_dir = File.join Dir.pwd, "Android-Couchbase-Callback", "assets"
 
     apk_path = File.join( current_dir, "apks", token, "tangerine.apk" )
-
-    warn "tried to put in"
-    warn apk_path
 
     Dir.chdir(acc_dir) {
       `ant clean`
