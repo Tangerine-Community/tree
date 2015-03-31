@@ -164,27 +164,30 @@ post "/:group" do
   end
 
   # upload assets
-  begin
-    asset_dir = File.join( Dir.pwd, "tutor-assets" )
-    couchapprc_location = File.join( asset_dir, ".couchapprc"  )
-    config_file = {
-      "env" => {
-        "default" => {
-          "db" => "http://#{$username}:#{$password}@localhost:5984/copied-group-#{params[:group]}"
+  $l.info "includeLessonPlans #{params[:includeLessonPlans]}"
+  if params[:includeLessonPlans] == "true"
+    begin
+      asset_dir = File.join( Dir.pwd, "tutor-assets" )
+      couchapprc_location = File.join( asset_dir, ".couchapprc"  )
+      config_file = {
+        "env" => {
+          "default" => {
+            "db" => "http://#{$username}:#{$password}@localhost:5984/copied-group-#{params[:group]}"
+          }
         }
+      }.to_json
+      File.open( couchapprc_location, 'w' ) { |f| f.write(config_file) }
+      $l.info "couchapp push"
+      Dir.chdir(asset_dir) {
+        `couchapp push`
       }
-    }.to_json
-    File.open( couchapprc_location, 'w' ) { |f| f.write(config_file) }
-    $l.info "couchapp push"
-    Dir.chdir(asset_dir) {
-      `couchapp push`
-    }
-    $l.info "Done"
+      $l.info "Done"
 
-  rescue Exception => e
-    halt_error 500, "Failed to upload lesson plan assets.", "Could not upload lesson plan assets. #{e}"
+    rescue Exception => e
+      halt_error 500, "Failed to upload lesson plan assets.", "Could not upload lesson plan assets. #{e}"
+    end
+
   end
-
   
   # zip APK and place it in token download directory
   begin
@@ -198,7 +201,7 @@ post "/:group" do
     acc_dir = File.join Dir.pwd, "Android-Couchbase-Callback"
     assets_dir = File.join Dir.pwd, "Android-Couchbase-Callback", "assets"
 
-    apk_path = File.join( current_dir, "apks", token, "tangerine.apk" )
+    apk_path = File.join( current_dir, "apks", token, "tutor.apk" )
 
     Dir.chdir(acc_dir) {
       `ant clean`
@@ -225,7 +228,7 @@ get "/?:token?" do
 
   current_dir = Dir.pwd
 
-  apk_name = "tangerine.apk"
+  apk_name = "tutor.apk"
   apk_path = File.join( current_dir, 'apks', params[:token], apk_name)
 
   if File.exist? apk_path
