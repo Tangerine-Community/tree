@@ -3,11 +3,9 @@
 # Tangerine Tree
 # This program generates APKs and a download link for a group.
 #
-# It works by using the AndroidCouchbaseCallback generated APK as a shell.
-# Then we replace the database from another source. We peel the Tangerine
-# and insert any kind of fruit we want.
-#
-# Note: the database that is being replicated should contain a couchapp.
+# A cordova project submodule generates the APK.
+# Files that contain bundles of json objects are stored as well and used by Tangerine
+# during its first boot.
 #
 
 require "bundler"
