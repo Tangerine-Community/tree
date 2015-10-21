@@ -1,0 +1,12 @@
+nohup.out
+*.log
+
+# server configuration
+config.rb
+
+# generated apk files
+apks/
+
+# Bundler
+.bundle/
+vendor/

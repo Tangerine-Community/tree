@@ -1,0 +1,3 @@
+[submodule "Tangerine-client"]
+	path = Tangerine-client
+	url = https://github.com/Tangerine-Community/Tangerine-client
