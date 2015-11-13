@@ -1,4 +1,4 @@
 Tangerine tree
 ====
 
-This portion of Tangerine is repsonsible for creating APKs for a particular group.
+This portion of Tangerine is responsible for creating APKs for a particular group.
