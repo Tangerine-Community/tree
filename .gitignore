@@ -9,3 +9,5 @@ apks/
 # Bundler
 .bundle/
 vendor/
+
+.idea/

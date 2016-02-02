@@ -194,7 +194,7 @@ class Tree < Sinatra::Base
     elsif params[:format] == "arm"
       format = "arm"
     else
-      format = "x86"
+      format = "arm"
     end
 
     token = params[:token].downcase.gsub(/[^a-z]/,'')
