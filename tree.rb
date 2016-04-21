@@ -88,6 +88,8 @@ post "/:group" do
   id_list << "settings"
   id_list << "templates"
   id_list << "configuration"
+  id_list << "school-list"
+  id_list << "location-list"
   id_list << "_design/t"
 
   # replicate group to clean copied group
@@ -167,7 +169,7 @@ post "/:group" do
   $l.info "includeLessonPlans #{params[:includeLessonPlans]}"
   if params[:includeLessonPlans] == "true"
     begin
-      asset_dir = File.join( Dir.pwd, "tutor-assets" )
+      asset_dir = File.join( Dir.pwd, "assets/group-#{params[:group]}" )
       couchapprc_location = File.join( asset_dir, ".couchapprc"  )
       config_file = {
         "env" => {
@@ -201,7 +203,7 @@ post "/:group" do
     acc_dir = File.join Dir.pwd, "Android-Couchbase-Callback"
     assets_dir = File.join Dir.pwd, "Android-Couchbase-Callback", "assets"
 
-    apk_path = File.join( current_dir, "apks", token, "tangerine.apk" )
+    apk_path = File.join( current_dir, "apks", token, "tutor.apk" )
 
     Dir.chdir(acc_dir) {
       `ant clean`
@@ -228,7 +230,7 @@ get "/?:token?" do
 
   current_dir = Dir.pwd
 
-  apk_name = "tangerine.apk"
+  apk_name = "tutor.apk"
   apk_path = File.join( current_dir, 'apks', params[:token], apk_name)
 
   if File.exist? apk_path
